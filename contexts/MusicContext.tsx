@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { Song, Playlist, PlayerState } from '../types/music';
 import { storageService } from '../services/storageService';
-import { playerService, PlaybackStatus } from '../services/playerService';
+import { playerService } from '../services/playerService';
+import { AVPlaybackStatus } from 'expo-av';
 
 interface MusicContextType {
   songs: Song[];
@@ -61,7 +62,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    playerService.setOnPlaybackStatusUpdate((status: PlaybackStatus) => {
+    playerService.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
       if (status.isLoaded) {
         setPlayerState(prev => ({
           ...prev,
@@ -183,6 +184,13 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const playSong = async (song: Song, queue?: Song[], isVideo: boolean = false) => {
     try {
+      const status = await playerService.getStatus();
+      const wasPlaying = status && 'isPlaying' in status ? status.isPlaying : false;
+      
+      if (wasPlaying) {
+        await playerService.pause();
+      }
+      
       await playerService.loadSound(song, isVideo);
       await playerService.play();
       

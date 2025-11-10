@@ -27,7 +27,6 @@ export interface PlayerState {
   currentIndex: number;
   repeat: 'off' | 'one' | 'all';
   shuffle: boolean;
-  is8DEnabled: boolean;
 }
 
 export interface DownloadProgress {

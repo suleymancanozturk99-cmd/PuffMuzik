@@ -1,26 +1,23 @@
-import { useAudioPlayer, AudioSource } from 'expo-audio';
+import { Audio, AVPlaybackStatus, Video } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Song } from '../types/music';
 
-export interface PlaybackStatus {
-  isLoaded: boolean;
-  isPlaying: boolean;
-  positionMillis: number;
-  durationMillis: number | null;
-  didJustFinish: boolean;
-}
-
 class PlayerService {
-  private audioPlayer: ReturnType<typeof useAudioPlayer> | null = null;
+  private sound: Audio.Sound | null = null;
+  private video: Video | null = null;
   private currentSong: Song | null = null;
   private isVideoMode: boolean = false;
-  private statusUpdateCallback: ((status: PlaybackStatus) => void) | null = null;
-  private positionInterval: NodeJS.Timeout | null = null;
 
   async initialize(): Promise<void> {
     try {
-      // expo-audio doesn't require audio mode setup like expo-av
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,
+        shouldDuckAndroid: true,
+        interruptionModeIOS: 2,
+        interruptionModeAndroid: 1,
+      });
 
       // Notification izinlerini iste
       await Notifications.requestPermissionsAsync();
@@ -38,16 +35,20 @@ class PlayerService {
     }
   }
 
-  createAudioPlayer(): ReturnType<typeof useAudioPlayer> {
-    // This is a workaround - in actual implementation, audioPlayer should be created in a component
-    // For now, we'll use a simple state management
-    return null as any;
-  }
-
   async loadSound(song: Song, isVideo: boolean = false): Promise<void> {
     try {
-      // For video mode, we'll handle it separately in the Video component
-      // For audio mode, we don't need to do anything here as expo-audio is used in component
+      if (this.sound) {
+        await this.sound.unloadAsync();
+      }
+
+      const filePath = isVideo && song.videoPath ? song.videoPath : song.filePath;
+      
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: filePath },
+        { shouldPlay: false }
+      );
+
+      this.sound = sound;
       this.currentSong = song;
       this.isVideoMode = isVideo;
     } catch (error) {
@@ -56,12 +57,12 @@ class PlayerService {
     }
   }
 
-  setAudioPlayer(player: any): void {
-    this.audioPlayer = player;
+  setVideoRef(ref: Video | null): void {
+    this.video = ref;
   }
 
-  getAudioPlayer(): any {
-    return this.audioPlayer;
+  getVideoRef(): Video | null {
+    return this.video;
   }
 
   isInVideoMode(): boolean {
@@ -70,13 +71,25 @@ class PlayerService {
 
   async switchMode(isVideo: boolean): Promise<void> {
     if (!this.currentSong) return;
-    this.isVideoMode = isVideo;
+    
+    const status = await this.getStatus();
+    const position = status && 'positionMillis' in status ? status.positionMillis : 0;
+    const wasPlaying = status && 'isPlaying' in status ? status.isPlaying : false;
+
+    await this.loadSound(this.currentSong, isVideo);
+    await this.seekTo(position);
+    
+    if (wasPlaying) {
+      await this.play();
+    }
   }
 
   async play(): Promise<void> {
     try {
-      // Audio playing is handled in the component with expo-audio
-      await this.showMediaNotification('play');
+      if (this.sound) {
+        await this.sound.playAsync();
+        await this.showMediaNotification('play');
+      }
     } catch (error) {
       console.error('Error playing sound:', error);
       throw error;
@@ -85,8 +98,10 @@ class PlayerService {
 
   async pause(): Promise<void> {
     try {
-      // Audio pausing is handled in the component with expo-audio
-      await this.showMediaNotification('pause');
+      if (this.sound) {
+        await this.sound.pauseAsync();
+        await this.showMediaNotification('pause');
+      }
     } catch (error) {
       console.error('Error pausing sound:', error);
       throw error;
@@ -95,7 +110,9 @@ class PlayerService {
 
   async stop(): Promise<void> {
     try {
-      // Audio stopping is handled in the component
+      if (this.sound) {
+        await this.sound.stopAsync();
+      }
     } catch (error) {
       console.error('Error stopping sound:', error);
       throw error;
@@ -104,37 +121,42 @@ class PlayerService {
 
   async seekTo(position: number): Promise<void> {
     try {
-      // Seeking is handled in the component
+      if (this.sound) {
+        await this.sound.setPositionAsync(position);
+      }
     } catch (error) {
       console.error('Error seeking:', error);
       throw error;
     }
   }
 
-  async getStatus(): Promise<PlaybackStatus | null> {
-    // Status is tracked in the component
-    return null;
+  async getStatus(): Promise<AVPlaybackStatus | null> {
+    try {
+      if (this.sound) {
+        return await this.sound.getStatusAsync();
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting status:', error);
+      return null;
+    }
   }
 
-  setOnPlaybackStatusUpdate(callback: (status: PlaybackStatus) => void): void {
-    this.statusUpdateCallback = callback;
-  }
-
-  updateStatus(status: PlaybackStatus): void {
-    if (this.statusUpdateCallback) {
-      this.statusUpdateCallback(status);
+  setOnPlaybackStatusUpdate(callback: (status: AVPlaybackStatus) => void): void {
+    if (this.sound) {
+      this.sound.setOnPlaybackStatusUpdate(callback);
     }
   }
 
   async cleanup(): Promise<void> {
     try {
-      if (this.positionInterval) {
-        clearInterval(this.positionInterval);
-        this.positionInterval = null;
+      if (this.sound) {
+        await this.sound.unloadAsync();
+        this.sound = null;
+        this.currentSong = null;
+        this.isVideoMode = false;
+        this.video = null;
       }
-      this.audioPlayer = null;
-      this.currentSong = null;
-      this.isVideoMode = false;
       await this.dismissMediaNotification();
     } catch (error) {
       console.error('Error cleaning up:', error);

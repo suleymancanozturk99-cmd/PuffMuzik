@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, FlatList, ScrollView, Modal, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, FlatList, ScrollView, Modal } from 'react-native';
 import { Image } from 'expo-image';
-import { VideoView, useVideoPlayer } from 'expo-video';
-import { useAudioPlayer } from 'expo-audio';
+import { Video, ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,22 +11,16 @@ import { useMusic } from '../hooks/useMusic';
 import { playerService } from '../services/playerService';
 import { theme } from '../constants/theme';
 import { useAlert } from '@/template';
-import * as FileSystem from 'expo-file-system';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COVER_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function PlayerScreen() {
   const router = useRouter();
-  const audioPlayer = useAudioPlayer(playerState.currentSong?.filePath || '');
-  const videoPlayer = useVideoPlayer(playerState.currentSong?.videoPath || '', player => {
-    player.loop = playerState.repeat === 'one';
-    player.play();
-  });
+  const videoRef = useRef<Video>(null);
   const {
     playerState,
     playlists,
-    favorites,
     playSong,
     pauseSong,
     resumeSong,
@@ -38,24 +31,7 @@ export default function PlayerScreen() {
     toggleShuffle,
     switchPlayMode,
     addToPlaylist,
-    toggleFavorite,
   } = useMusic();
-
-  const handleFavoritePress = async (songId: string) => {
-    try {
-      await toggleFavorite(songId);
-    } catch (error) {
-      showAlert('Hata', 'Favori işlemi başarısız oldu');
-    }
-  };
-
-  const adjustColor = (color: string, amount: number): string => {
-    const num = parseInt(color.replace('#', ''), 16);
-    const r = Math.max(0, Math.min(255, (num >> 16) + amount));
-    const g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
-    const b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
-    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-  };
 
   const { currentSong, isPlaying, position, duration, repeat, shuffle } = playerState;
   const [isSeeking, setIsSeeking] = useState(false);
@@ -63,167 +39,12 @@ export default function PlayerScreen() {
   const [isVideoMode, setIsVideoMode] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [showSongInfo, setShowSongInfo] = useState(false);
-  const [songFileSize, setSongFileSize] = useState<number>(0);
-  const [dominantColor, setDominantColor] = useState(theme.colors.primary);
-  const scrollAnim = useRef(new Animated.Value(0)).current;
-  const waveAnims = useRef([...Array(5)].map(() => new Animated.Value(0))).current;
   const { showAlert } = useAlert();
 
   useEffect(() => {
     const shouldBeVideoMode = currentSong?.hasVideo && playerService.isInVideoMode();
     setIsVideoMode(shouldBeVideoMode || false);
-    
-    if (currentSong) {
-      extractDominantColor(currentSong.coverUrl);
-      getFileSize(currentSong);
-      
-      // Load audio or video based on mode
-      if (shouldBeVideoMode && currentSong.videoPath) {
-        videoPlayer.replace(currentSong.videoPath);
-      } else {
-        audioPlayer.replace(currentSong.filePath);
-      }
-    }
   }, [currentSong?.id]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      if (isVideoMode) {
-        videoPlayer.play();
-      } else {
-        audioPlayer.play();
-      }
-    } else {
-      if (isVideoMode) {
-        videoPlayer.pause();
-      } else {
-        audioPlayer.pause();
-      }
-    }
-  }, [isPlaying, isVideoMode]);
-
-  useEffect(() => {
-    // Track audio position
-    const interval = setInterval(() => {
-      if (audioPlayer && !isVideoMode) {
-        playerService.updateStatus({
-          isLoaded: true,
-          isPlaying: audioPlayer.playing,
-          positionMillis: audioPlayer.currentTime * 1000,
-          durationMillis: audioPlayer.duration * 1000,
-          didJustFinish: false,
-        });
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [audioPlayer, isVideoMode]);
-
-  useEffect(() => {
-    // Track video position
-    const interval = setInterval(() => {
-      if (videoPlayer && isVideoMode) {
-        playerService.updateStatus({
-          isLoaded: true,
-          isPlaying: videoPlayer.playing,
-          positionMillis: videoPlayer.currentTime * 1000,
-          durationMillis: videoPlayer.duration * 1000,
-          didJustFinish: false,
-        });
-      }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [videoPlayer, isVideoMode]);
-
-  useEffect(() => {
-    if (isPlaying) {
-      startWaveAnimation();
-      startScrollAnimation();
-    } else {
-      stopWaveAnimation();
-      scrollAnim.stopAnimation();
-    }
-  }, [isPlaying]);
-
-  const extractDominantColor = async (imageUrl: string) => {
-    try {
-      setDominantColor(theme.colors.primary);
-    } catch (error) {
-      setDominantColor(theme.colors.primary);
-    }
-  };
-
-  const getFileSize = async (song: typeof currentSong) => {
-    if (!song) return;
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(song.filePath);
-      if (fileInfo.exists && 'size' in fileInfo) {
-        setSongFileSize(fileInfo.size || 0);
-      }
-    } catch (error) {
-      setSongFileSize(0);
-    }
-  };
-
-  const startWaveAnimation = () => {
-    waveAnims.forEach((anim, index) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 300 + index * 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 300 + index * 100,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    });
-  };
-
-  const stopWaveAnimation = () => {
-    waveAnims.forEach(anim => {
-      anim.setValue(0);
-    });
-  };
-
-  const startScrollAnimation = () => {
-    Animated.loop(
-      Animated.timing(scrollAnim, {
-        toValue: -1000,
-        duration: 15000,
-        useNativeDriver: true,
-      })
-    ).start();
-  };
-
-  const parseSongInfo = (title: string) => {
-    const parts = title.split(' - ');
-    if (parts.length >= 2) {
-      return {
-        artist: parts[0].trim(),
-        songName: parts.slice(1).join(' - ').trim(),
-      };
-    }
-    return {
-      artist: 'Bilinmeyen Sanatçı',
-      songName: title,
-    };
-  };
-
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
-  };
 
   if (!currentSong) {
     router.back();
@@ -240,11 +61,6 @@ export default function PlayerScreen() {
 
   const handleSeek = async (value: number) => {
     setIsSeeking(false);
-    if (isVideoMode) {
-      videoPlayer.currentTime = value / 1000;
-    } else {
-      audioPlayer.seekTo(value / 1000);
-    }
     await seekTo(value);
   };
 
@@ -261,20 +77,18 @@ export default function PlayerScreen() {
   const currentPosition = isSeeking ? seekPosition : position;
   const progress = duration > 0 ? currentPosition / duration : 0;
 
-  const songInfo = parseSongInfo(currentSong.title);
-
   return (
     <View style={styles.container}>
       <Image
         source={{ uri: currentSong.coverUrl }}
         style={styles.backgroundImage}
         contentFit="cover"
-        blurRadius={80}
+        blurRadius={50}
       />
 
-      <BlurView intensity={Platform.OS === 'ios' ? 95 : 85} style={styles.blur}>
+      <BlurView intensity={Platform.OS === 'ios' ? 90 : 80} style={styles.blur}>
         <LinearGradient
-          colors={[`${dominantColor}15`, `${dominantColor}30`, 'rgba(13, 13, 13, 0.95)']}
+          colors={['rgba(13, 13, 13, 0.8)', 'rgba(13, 13, 13, 0.95)']}
           style={styles.overlay}
         >
           <ScrollView
@@ -293,11 +107,15 @@ export default function PlayerScreen() {
             <View style={styles.coverContainer}>
               {isVideoMode && currentSong.hasVideo && currentSong.videoPath ? (
                 <View style={styles.videoContainer}>
-                  <VideoView
-                    player={videoPlayer}
+                  <Video
+                    ref={videoRef}
+                    source={{ uri: currentSong.videoPath }}
                     style={styles.video}
-                    nativeControls={false}
-                    contentFit="contain"
+                    resizeMode={ResizeMode.CONTAIN}
+                    shouldPlay={isPlaying}
+                    isLooping={repeat === 'one'}
+                    positionMillis={position}
+                    useNativeControls={false}
                   />
                 </View>
               ) : (
@@ -342,76 +160,28 @@ export default function PlayerScreen() {
             )}
 
             <View style={styles.infoContainer}>
-              <View style={styles.titleContainer}>
-                <Animated.Text 
-                  style={[
-                    styles.title,
-                    { transform: [{ translateX: scrollAnim }] }
-                  ]}
-                  numberOfLines={1}
-                >
-                  {songInfo.songName}  •  {songInfo.songName}  •  {songInfo.songName}
-                </Animated.Text>
-              </View>
-              <Text style={styles.artist} numberOfLines={1}>
-                {songInfo.artist}
+              <Text style={styles.title} numberOfLines={2}>
+                {currentSong.title}
               </Text>
               
               <View style={styles.waveContainer}>
-                {[0, 1, 2, 3, 4].map((i) => {
-                  const scale = waveAnims[i].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.3, 1],
-                  });
-                  return (
-                    <Animated.View
-                      key={i}
-                      style={[
-                        styles.wave,
-                        {
-                          transform: [{ scaleY: scale }],
-                          opacity: isPlaying ? 1 : 0.3,
-                        },
-                      ]}
-                    />
-                  );
-                })}
+                {isPlaying
+                  ? [1, 2, 3, 4, 5].map(i => (
+                      <View key={i} style={[styles.wave, styles.waveActive]} />
+                    ))
+                  : null}
               </View>
             </View>
 
             <View style={styles.progressContainer}>
-              <View style={styles.progressHeader}>
-                <TouchableOpacity
-                  style={styles.smallControlButton}
-                  onPress={toggleShuffle}
-                >
-                  <Ionicons
-                    name="shuffle"
-                    size={20}
-                    color={shuffle ? dominantColor : theme.colors.textSecondary}
-                  />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.smallControlButton}
-                  onPress={toggleRepeat}
-                >
-                  <Ionicons
-                    name={repeat === 'one' ? 'repeat-outline' : 'repeat'}
-                    size={20}
-                    color={repeat !== 'off' ? dominantColor : theme.colors.textSecondary}
-                  />
-                </TouchableOpacity>
-              </View>
-
               <Slider
                 style={styles.slider}
                 value={currentPosition}
                 minimumValue={0}
                 maximumValue={Math.max(duration, 1)}
-                minimumTrackTintColor={dominantColor}
+                minimumTrackTintColor={theme.colors.primary}
                 maximumTrackTintColor={theme.colors.surfaceLight}
-                thumbTintColor={dominantColor}
+                thumbTintColor={theme.colors.primary}
                 onValueChange={value => {
                   setIsSeeking(true);
                   setSeekPosition(value);
@@ -431,12 +201,23 @@ export default function PlayerScreen() {
             <View style={styles.controls}>
               <TouchableOpacity
                 style={styles.controlButton}
-                onPress={() => setShowMenu(true)}
+                onPress={() => setShowAddToPlaylist(true)}
               >
                 <Ionicons
-                  name="ellipsis-horizontal"
-                  size={28}
-                  color={theme.colors.text}
+                  name="add-circle-outline"
+                  size={24}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.controlButton}
+                onPress={toggleShuffle}
+              >
+                <Ionicons
+                  name="shuffle"
+                  size={24}
+                  color={shuffle ? theme.colors.primary : theme.colors.textSecondary}
                 />
               </TouchableOpacity>
 
@@ -444,7 +225,7 @@ export default function PlayerScreen() {
                 style={styles.controlButton}
                 onPress={previousSong}
               >
-                <Ionicons name="play-skip-back" size={40} color={theme.colors.text} />
+                <Ionicons name="play-skip-back" size={36} color={theme.colors.text} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -452,7 +233,7 @@ export default function PlayerScreen() {
                 onPress={handlePlayPause}
               >
                 <LinearGradient
-                  colors={[dominantColor, adjustColor(dominantColor, -30)]}
+                  colors={[theme.colors.primary, theme.colors.primaryDark]}
                   style={styles.playButtonGradient}
                 >
                   <Ionicons
@@ -467,21 +248,17 @@ export default function PlayerScreen() {
                 style={styles.controlButton}
                 onPress={nextSong}
               >
-                <Ionicons name="play-skip-forward" size={40} color={theme.colors.text} />
+                <Ionicons name="play-skip-forward" size={36} color={theme.colors.text} />
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.controlButton}
-                onPress={async () => {
-                  if (currentSong) {
-                    await handleFavoritePress(currentSong.id);
-                  }
-                }}
+                onPress={toggleRepeat}
               >
                 <Ionicons
-                  name={favorites.includes(currentSong.id) ? 'heart' : 'heart-outline'}
-                  size={28}
-                  color={favorites.includes(currentSong.id) ? dominantColor : theme.colors.text}
+                  name={repeat === 'one' ? 'repeat-outline' : 'repeat'}
+                  size={24}
+                  color={repeat !== 'off' ? theme.colors.primary : theme.colors.textSecondary}
                 />
               </TouchableOpacity>
             </View>
@@ -594,128 +371,6 @@ export default function PlayerScreen() {
           </View>
         </View>
       </Modal>
-
-      <Modal
-        visible={showMenu}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowMenu(false)}
-      >
-        <View style={styles.menuModalOverlay}>
-          <View style={styles.menuModalContent}>
-            <View style={styles.menuModalHeader}>
-              <Text style={styles.menuModalTitle}>Seçenekler</Text>
-              <TouchableOpacity onPress={() => setShowMenu(false)}>
-                <Ionicons name="close" size={28} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                setShowAddToPlaylist(true);
-              }}
-            >
-              <Ionicons name="add-circle-outline" size={24} color={dominantColor} />
-              <Text style={styles.menuItemText}>Listeye Ekle</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                setShowSongInfo(true);
-              }}
-            >
-              <Ionicons name="information-circle-outline" size={24} color={dominantColor} />
-              <Text style={styles.menuItemText}>Şarkı Detayları</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                showAlert('Yakında', 'Uyku zamanlayıcı özelliği yakında eklenecek');
-              }}
-            >
-              <Ionicons name="moon-outline" size={24} color={dominantColor} />
-              <Text style={styles.menuItemText}>Uyku Zamanlayıcı</Text>
-              <View style={styles.comingSoonBadge}>
-                <Text style={styles.comingSoonText}>Yakında</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setShowMenu(false);
-                setShowSongInfo(true);
-              }}
-            >
-              <Ionicons name="musical-notes-outline" size={24} color={dominantColor} />
-              <Text style={styles.menuItemText}>Şarkı Bilgileri</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showSongInfo}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowSongInfo(false)}
-      >
-        <View style={styles.infoModalOverlay}>
-          <View style={styles.infoModalContent}>
-            <View style={styles.infoModalHeader}>
-              <Text style={styles.infoModalTitle}>Şarkı Bilgileri</Text>
-              <TouchableOpacity onPress={() => setShowSongInfo(false)}>
-                <Ionicons name="close" size={28} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Başlık:</Text>
-              <Text style={styles.infoValue}>{songInfo.songName}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Sanatçı:</Text>
-              <Text style={styles.infoValue}>{songInfo.artist}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Süre:</Text>
-              <Text style={styles.infoValue}>{playerService.formatTime(duration)}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Dosya Boyutu:</Text>
-              <Text style={styles.infoValue}>{formatBytes(songFileSize)}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Format:</Text>
-              <Text style={styles.infoValue}>{currentSong.hasVideo ? 'Video + Ses' : 'Sadece Ses'}</Text>
-            </View>
-
-            {currentSong.hasVideo && currentSong.videoQuality && (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Video Kalitesi:</Text>
-                <Text style={styles.infoValue}>{currentSong.videoQuality}</Text>
-              </View>
-            )}
-
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Eklenme Tarihi:</Text>
-              <Text style={styles.infoValue}>
-                {new Date(currentSong.addedAt).toLocaleDateString('tr-TR')}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -800,52 +455,36 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     alignItems: 'center',
-    marginBottom: theme.spacing.lg,
-  },
-  titleContainer: {
-    width: '100%',
-    overflow: 'hidden',
-    marginBottom: theme.spacing.xs,
+    marginBottom: theme.spacing.xl,
   },
   title: {
-    fontSize: theme.fontSize.xl,
+    fontSize: theme.fontSize.xxl,
     fontWeight: theme.fontWeight.bold,
     color: theme.colors.text,
-  },
-  artist: {
-    fontSize: theme.fontSize.md,
-    fontWeight: theme.fontWeight.regular,
-    color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: theme.spacing.md,
   },
   waveContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    height: 40,
-    gap: 4,
+    height: 30,
   },
   wave: {
-    width: 3,
-    height: 24,
+    width: 4,
+    height: 20,
     backgroundColor: theme.colors.primary,
+    marginHorizontal: 3,
     borderRadius: 2,
   },
+  waveActive: {
+    height: 30,
+  },
   progressContainer: {
-    marginBottom: theme.spacing.lg,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: theme.spacing.sm,
-  },
-  smallControlButton: {
-    padding: theme.spacing.xs,
+    marginBottom: theme.spacing.xl,
   },
   slider: {
     width: '100%',
-    height: 30,
+    height: 40,
   },
   timeContainer: {
     flexDirection: 'row',
@@ -859,13 +498,13 @@ const styles = StyleSheet.create({
   },
   controls: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: theme.spacing.md,
   },
   controlButton: {
-    width: 56,
-    height: 56,
+    width: 50,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1002,90 +641,5 @@ const styles = StyleSheet.create({
   playlistModalItemCount: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.textSecondary,
-  },
-  menuModalOverlay: {
-    flex: 1,
-    backgroundColor: theme.colors.overlay,
-    justifyContent: 'flex-end',
-  },
-  menuModalContent: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: theme.borderRadius.xl,
-    borderTopRightRadius: theme.borderRadius.xl,
-    paddingBottom: theme.spacing.xl,
-  },
-  menuModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: theme.spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  menuModalTitle: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  menuItemText: {
-    fontSize: theme.fontSize.md,
-    fontWeight: theme.fontWeight.medium,
-    color: theme.colors.text,
-    marginLeft: theme.spacing.md,
-    flex: 1,
-  },
-  comingSoonBadge: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4,
-    borderRadius: theme.borderRadius.xs,
-  },
-  comingSoonText: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.text,
-    fontWeight: theme.fontWeight.semibold,
-  },
-  infoModalOverlay: {
-    flex: 1,
-    backgroundColor: theme.colors.overlay,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  infoModalContent: {
-    width: '85%',
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.lg,
-  },
-  infoModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.lg,
-  },
-  infoModalTitle: {
-    fontSize: theme.fontSize.xl,
-    fontWeight: theme.fontWeight.bold,
-    color: theme.colors.text,
-  },
-  infoRow: {
-    marginBottom: theme.spacing.md,
-  },
-  infoLabel: {
-    fontSize: theme.fontSize.sm,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
-  },
-  infoValue: {
-    fontSize: theme.fontSize.md,
-    color: theme.colors.text,
-    fontWeight: theme.fontWeight.medium,
   },
 });
