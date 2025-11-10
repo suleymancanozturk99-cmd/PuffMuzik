@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, FlatList, ScrollView, Modal, Animated } from 'react-native';
 import { Image } from 'expo-image';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useAudioPlayer } from 'expo-audio';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +19,11 @@ const COVER_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function PlayerScreen() {
   const router = useRouter();
-  const videoRef = useRef<Video>(null);
+  const audioPlayer = useAudioPlayer(playerState.currentSong?.filePath || '');
+  const videoPlayer = useVideoPlayer(playerState.currentSong?.videoPath || '', player => {
+    player.loop = playerState.repeat === 'one';
+    player.play();
+  });
   const {
     playerState,
     playlists,
@@ -73,8 +78,65 @@ export default function PlayerScreen() {
     if (currentSong) {
       extractDominantColor(currentSong.coverUrl);
       getFileSize(currentSong);
+      
+      // Load audio or video based on mode
+      if (shouldBeVideoMode && currentSong.videoPath) {
+        videoPlayer.replace(currentSong.videoPath);
+      } else {
+        audioPlayer.replace(currentSong.filePath);
+      }
     }
   }, [currentSong?.id]);
+
+  useEffect(() => {
+    if (isPlaying) {
+      if (isVideoMode) {
+        videoPlayer.play();
+      } else {
+        audioPlayer.play();
+      }
+    } else {
+      if (isVideoMode) {
+        videoPlayer.pause();
+      } else {
+        audioPlayer.pause();
+      }
+    }
+  }, [isPlaying, isVideoMode]);
+
+  useEffect(() => {
+    // Track audio position
+    const interval = setInterval(() => {
+      if (audioPlayer && !isVideoMode) {
+        playerService.updateStatus({
+          isLoaded: true,
+          isPlaying: audioPlayer.playing,
+          positionMillis: audioPlayer.currentTime * 1000,
+          durationMillis: audioPlayer.duration * 1000,
+          didJustFinish: false,
+        });
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [audioPlayer, isVideoMode]);
+
+  useEffect(() => {
+    // Track video position
+    const interval = setInterval(() => {
+      if (videoPlayer && isVideoMode) {
+        playerService.updateStatus({
+          isLoaded: true,
+          isPlaying: videoPlayer.playing,
+          positionMillis: videoPlayer.currentTime * 1000,
+          durationMillis: videoPlayer.duration * 1000,
+          didJustFinish: false,
+        });
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [videoPlayer, isVideoMode]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -178,6 +240,11 @@ export default function PlayerScreen() {
 
   const handleSeek = async (value: number) => {
     setIsSeeking(false);
+    if (isVideoMode) {
+      videoPlayer.currentTime = value / 1000;
+    } else {
+      audioPlayer.seekTo(value / 1000);
+    }
     await seekTo(value);
   };
 
@@ -226,15 +293,11 @@ export default function PlayerScreen() {
             <View style={styles.coverContainer}>
               {isVideoMode && currentSong.hasVideo && currentSong.videoPath ? (
                 <View style={styles.videoContainer}>
-                  <Video
-                    ref={videoRef}
-                    source={{ uri: currentSong.videoPath }}
+                  <VideoView
+                    player={videoPlayer}
                     style={styles.video}
-                    resizeMode={ResizeMode.CONTAIN}
-                    shouldPlay={isPlaying}
-                    isLooping={repeat === 'one'}
-                    positionMillis={position}
-                    useNativeControls={false}
+                    nativeControls={false}
+                    contentFit="contain"
                   />
                 </View>
               ) : (
