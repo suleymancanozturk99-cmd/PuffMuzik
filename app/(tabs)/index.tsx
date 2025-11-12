@@ -232,6 +232,12 @@ export default function HomeScreen() {
       </LinearGradient>
 
       <View style={styles.sectionsContainer}>
+        <View style={styles.sectionTabs}>
+          <View style={styles.sectionTab}>
+            <Text style={styles.sectionTabText}>Keşfet</Text>
+            <Text style={styles.comingSoonText}>Yakında</Text>
+          </View>
+        </View>
 
         {activeSection === 'discover' && (
           <ScrollView
@@ -622,6 +628,24 @@ const styles = StyleSheet.create({
   },
   sectionsContainer: {
     flex: 1,
+  },
+  sectionTabs: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+  },
+  sectionTab: {
+    alignItems: 'center',
+  },
+  sectionTabText: {
+    fontSize: theme.fontSize.xl,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+  },
+  comingSoonText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.textTertiary,
+    marginTop: theme.spacing.xs,
   },
   playlistsSection: {
     flex: 1,

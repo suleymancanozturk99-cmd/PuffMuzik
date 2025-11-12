@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { TouchableOpacity, Text, StyleSheet, View, Animated } from 'react-native';
+import React from 'react';
+import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -11,40 +11,6 @@ export function MiniPlayer() {
   const router = useRouter();
   const { playerState, pauseSong, resumeSong, nextSong } = useMusic();
   const { currentSong, isPlaying } = playerState;
-  const waveAnims = useRef([...Array(3)].map(() => new Animated.Value(0))).current;
-
-  useEffect(() => {
-    if (isPlaying) {
-      startWaveAnimation();
-    } else {
-      stopWaveAnimation();
-    }
-  }, [isPlaying]);
-
-  const startWaveAnimation = () => {
-    waveAnims.forEach((anim, index) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 300 + index * 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(anim, {
-            toValue: 0,
-            duration: 300 + index * 100,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    });
-  };
-
-  const stopWaveAnimation = () => {
-    waveAnims.forEach(anim => {
-      anim.setValue(0);
-    });
-  };
 
   if (!currentSong) return null;
 
@@ -78,24 +44,9 @@ export function MiniPlayer() {
           </Text>
           <View style={styles.playingIndicator}>
             <View style={styles.waveContainer}>
-              {[0, 1, 2].map((i) => {
-                const scale = waveAnims[i].interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.3, 1],
-                });
-                return (
-                  <Animated.View
-                    key={i}
-                    style={[
-                      styles.wave,
-                      {
-                        transform: [{ scaleY: scale }],
-                        opacity: isPlaying ? 1 : 0.3,
-                      },
-                    ]}
-                  />
-                );
-              })}
+              {[1, 2, 3].map(i => (
+                <View key={i} style={[styles.wave, isPlaying && styles.waveActive]} />
+              ))}
             </View>
             <Text style={styles.statusText}>
               {isPlaying ? 'Çalıyor' : 'Duraklatıldı'}
@@ -135,7 +86,6 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
-    opacity: 0.85,
   },
   cover: {
     width: 48,
@@ -168,6 +118,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     marginRight: 2,
     borderRadius: 2,
+    opacity: 0.3,
+  },
+  waveActive: {
+    opacity: 1,
   },
   statusText: {
     fontSize: theme.fontSize.xs,
