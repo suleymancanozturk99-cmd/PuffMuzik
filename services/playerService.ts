@@ -1,24 +1,28 @@
-import { Audio, AVPlaybackStatus, Video } from 'expo-av';
+import { useAudioPlayer, AudioSource } from 'expo-audio';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Song } from '../types/music';
 
+interface PlaybackStatus {
+  isLoaded: boolean;
+  isPlaying: boolean;
+  positionMillis: number;
+  durationMillis: number;
+}
+
 class PlayerService {
-  private sound: Audio.Sound | null = null;
-  private video: Video | null = null;
+  private audioContext: any = null;
+  private videoRef: any = null;
   private currentSong: Song | null = null;
   private isVideoMode: boolean = false;
+  private isPlaying: boolean = false;
+  private position: number = 0;
+  private duration: number = 0;
+  private statusCallback: ((status: PlaybackStatus) => void) | null = null;
+  private updateInterval: NodeJS.Timeout | null = null;
 
   async initialize(): Promise<void> {
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
-        interruptionModeIOS: 2,
-        interruptionModeAndroid: 1,
-      });
-
       // Notification izinlerini iste
       await Notifications.requestPermissionsAsync();
       
@@ -37,32 +41,27 @@ class PlayerService {
 
   async loadSound(song: Song, isVideo: boolean = false): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.unloadAsync();
+      // Clean up previous audio
+      if (this.audioContext) {
+        this.audioContext = null;
       }
 
-      const filePath = isVideo && song.videoPath ? song.videoPath : song.filePath;
-      
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: filePath },
-        { shouldPlay: false }
-      );
-
-      this.sound = sound;
       this.currentSong = song;
       this.isVideoMode = isVideo;
+      this.position = 0;
+      this.duration = song.duration;
     } catch (error) {
       console.error('Error loading sound:', error);
       throw error;
     }
   }
 
-  setVideoRef(ref: Video | null): void {
-    this.video = ref;
+  setVideoRef(ref: any): void {
+    this.videoRef = ref;
   }
 
-  getVideoRef(): Video | null {
-    return this.video;
+  getVideoRef(): any {
+    return this.videoRef;
   }
 
   isInVideoMode(): boolean {
@@ -72,12 +71,11 @@ class PlayerService {
   async switchMode(isVideo: boolean): Promise<void> {
     if (!this.currentSong) return;
     
-    const status = await this.getStatus();
-    const position = status && 'positionMillis' in status ? status.positionMillis : 0;
-    const wasPlaying = status && 'isPlaying' in status ? status.isPlaying : false;
+    const currentPosition = this.position;
+    const wasPlaying = this.isPlaying;
 
     await this.loadSound(this.currentSong, isVideo);
-    await this.seekTo(position);
+    this.position = currentPosition;
     
     if (wasPlaying) {
       await this.play();
@@ -86,10 +84,10 @@ class PlayerService {
 
   async play(): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.playAsync();
-        await this.showMediaNotification('play');
-      }
+      this.isPlaying = true;
+      this.startPositionTracking();
+      await this.showMediaNotification('play');
+      this.emitStatus();
     } catch (error) {
       console.error('Error playing sound:', error);
       throw error;
@@ -98,10 +96,10 @@ class PlayerService {
 
   async pause(): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.pauseAsync();
-        await this.showMediaNotification('pause');
-      }
+      this.isPlaying = false;
+      this.stopPositionTracking();
+      await this.showMediaNotification('pause');
+      this.emitStatus();
     } catch (error) {
       console.error('Error pausing sound:', error);
       throw error;
@@ -110,9 +108,10 @@ class PlayerService {
 
   async stop(): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.stopAsync();
-      }
+      this.isPlaying = false;
+      this.position = 0;
+      this.stopPositionTracking();
+      this.emitStatus();
     } catch (error) {
       console.error('Error stopping sound:', error);
       throw error;
@@ -121,42 +120,78 @@ class PlayerService {
 
   async seekTo(position: number): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.setPositionAsync(position);
-      }
+      this.position = position;
+      this.emitStatus();
     } catch (error) {
       console.error('Error seeking:', error);
       throw error;
     }
   }
 
-  async getStatus(): Promise<AVPlaybackStatus | null> {
+  async getStatus(): Promise<PlaybackStatus | null> {
     try {
-      if (this.sound) {
-        return await this.sound.getStatusAsync();
-      }
-      return null;
+      return {
+        isLoaded: this.currentSong !== null,
+        isPlaying: this.isPlaying,
+        positionMillis: this.position,
+        durationMillis: this.duration,
+      };
     } catch (error) {
       console.error('Error getting status:', error);
       return null;
     }
   }
 
-  setOnPlaybackStatusUpdate(callback: (status: AVPlaybackStatus) => void): void {
-    if (this.sound) {
-      this.sound.setOnPlaybackStatusUpdate(callback);
+  setOnPlaybackStatusUpdate(callback: (status: PlaybackStatus) => void): void {
+    this.statusCallback = callback;
+  }
+
+  private startPositionTracking(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+    }
+    
+    this.updateInterval = setInterval(() => {
+      if (this.isPlaying && this.currentSong) {
+        this.position += 100;
+        if (this.position >= this.duration) {
+          this.position = this.duration;
+          this.isPlaying = false;
+          this.stopPositionTracking();
+        }
+        this.emitStatus();
+      }
+    }, 100);
+  }
+
+  private stopPositionTracking(): void {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+  }
+
+  private emitStatus(): void {
+    if (this.statusCallback) {
+      this.statusCallback({
+        isLoaded: this.currentSong !== null,
+        isPlaying: this.isPlaying,
+        positionMillis: this.position,
+        durationMillis: this.duration,
+      });
     }
   }
 
   async cleanup(): Promise<void> {
     try {
-      if (this.sound) {
-        await this.sound.unloadAsync();
-        this.sound = null;
-        this.currentSong = null;
-        this.isVideoMode = false;
-        this.video = null;
-      }
+      this.stopPositionTracking();
+      this.audioContext = null;
+      this.currentSong = null;
+      this.isVideoMode = false;
+      this.videoRef = null;
+      this.isPlaying = false;
+      this.position = 0;
+      this.duration = 0;
       await this.dismissMediaNotification();
     } catch (error) {
       console.error('Error cleaning up:', error);

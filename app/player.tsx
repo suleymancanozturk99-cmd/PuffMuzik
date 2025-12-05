@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, FlatList, ScrollView, Modal, Animated } from 'react-native';
 import { Image } from 'expo-image';
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,7 +18,13 @@ const COVER_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function PlayerScreen() {
   const router = useRouter();
-  const videoRef = useRef<Video>(null);
+  const videoPlayer = currentSong?.hasVideo && currentSong?.videoPath 
+    ? useVideoPlayer(currentSong.videoPath, player => {
+        player.loop = repeat === 'one';
+        if (isPlaying) player.play();
+        else player.pause();
+      })
+    : null;
   const {
     playerState,
     playlists,
@@ -224,17 +230,12 @@ export default function PlayerScreen() {
               <Ionicons name="chevron-down" size={32} color={theme.colors.text} />
             </TouchableOpacity>
             <View style={styles.coverContainer}>
-              {isVideoMode && currentSong.hasVideo && currentSong.videoPath ? (
+              {isVideoMode && currentSong.hasVideo && currentSong.videoPath && videoPlayer ? (
                 <View style={styles.videoContainer}>
-                  <Video
-                    ref={videoRef}
-                    source={{ uri: currentSong.videoPath }}
+                  <VideoView
+                    player={videoPlayer}
                     style={styles.video}
-                    resizeMode={ResizeMode.CONTAIN}
-                    shouldPlay={isPlaying}
-                    isLooping={repeat === 'one'}
-                    positionMillis={position}
-                    useNativeControls={false}
+                    nativeControls={false}
                   />
                 </View>
               ) : (
