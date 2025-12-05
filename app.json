@@ -42,12 +42,8 @@
         }
       ],
       "expo-web-browser",
-      [
-        "expo-av",
-        {
-          "microphonePermission": false
-        }
-      ],
+      "expo-video",
+      "expo-audio",
       [
         "expo-notifications",
         {
