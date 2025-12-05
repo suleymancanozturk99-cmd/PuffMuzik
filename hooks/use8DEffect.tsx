@@ -100,7 +100,7 @@ export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions
         intervalRef.current = null;
       }
     };
-  }, [sound, isEnabled, speed]);
+  }, [player, isEnabled, speed]);
 
   // Return current state for debugging/UI
   return {
