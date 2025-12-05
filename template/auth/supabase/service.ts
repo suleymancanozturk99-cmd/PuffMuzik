@@ -1,15 +1,20 @@
 // @ts-nocheck
-import { AuthUser, SendOTPOptions, SignUpResult } from '../types';
+import { AuthUser, SendOTPOptions, SignUpResult, GoogleSignInResult } from '../types';
 import { safeSupabaseOperation, getSharedSupabaseClient } from '../../core/client';
 import { configManager } from '../../core/config';
 import { Platform } from 'react-native';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+
+// Ensure Web platform correctly handles auth callbacks
+WebBrowser.maybeCompleteAuthSession();
 
 // Visibility change listener related variables
 let lastVisibilityChange = 0;
 let visibilityListener: (() => void) | null = null;
 
 // Operation state tracking to prevent deadlock
-let isUpdatingUser = false;
+let isUpdatingUserInOTPFlow = false;
 
 const TIMEOUT_CONFIG = {
   AUTH_OPERATIONS: 10000,
@@ -69,7 +74,7 @@ export const getLastVisibilityChange = (): number => lastVisibilityChange;
 // Enhanced event filtering to prevent deadlock
 export const shouldIgnoreAuthEvent = (event: string): boolean => {
   // Ignore USER_UPDATED events during updateUser operation to prevent deadlock
-  if (event === 'USER_UPDATED' && isUpdatingUser) {
+  if (event === 'USER_UPDATED' && isUpdatingUserInOTPFlow) {
     return true;
   }
   
@@ -93,76 +98,21 @@ export class AuthService {
 
   async getCurrentUser(): Promise<AuthUser | null> {
     try {
-      const user = await safeSupabaseOperation(async (client) => {
-        const { data: { user }, error: getUserError } = await withTimeout(
-          client.auth.getUser(),
+      const session = await safeSupabaseOperation(async (client) => {
+        const { data: { session }, error } = await withTimeout(
+          client.auth.getSession(),
           TIMEOUT_CONFIG.DATA_QUERIES,
-          'GetUser'
+          'GetSession'
         );
         
-        return user;
+        if (error) throw error;
+        return session;
       }, true);
       
-      if (!user) return null;
+      if (!session?.user) return null;
 
-      const fallbackUser: AuthUser = {
-        id: user.id,
-        email: user.email || '',
-        username: user.email ? user.email.split('@')[0] : `user_${user.id.slice(0, 8)}`,
-        created_at: user.created_at,
-        updated_at: user.updated_at || user.created_at,
-      };
-
-      const authConfig = configManager.getModuleConfig('auth');
-      const tableName = authConfig?.profileTableName || 'user_profiles';
-
-      try {
-        const profile = await safeSupabaseOperation(async (client) => {
-          const { data: profile, error: profileError } = await withTimeout(
-            client
-              .from(tableName)
-              .select('*')
-              .eq('id', user.id)
-              .single(),
-            TIMEOUT_CONFIG.DATA_QUERIES,
-            'ProfileQuery'
-          );
-          
-          if (profileError) {
-            if (profileError.message.includes('timeout')) {
-              console.warn('[Template:AuthService] Profile query timeout, using fallback data');
-              return null;
-            } else if (profileError.code === 'PGRST116') {
-              console.warn(`[Template:AuthService] Profile table '${tableName}' not found. Using fallback data.`);
-            } else if (profileError.code === 'PGRST301') {
-              console.warn(`[Template:AuthService] User profile not found in '${tableName}'. Creating trigger may be needed.`);
-            } else {
-              console.warn(`[Template:AuthService] Profile query failed:`, profileError.message);
-            }
-            return null;
-          }
-          
-          return profile;
-        });
-
-        if (profile) {
-          return {
-            id: profile.id || fallbackUser.id,
-            email: profile.email || fallbackUser.email,
-            username: profile.username || fallbackUser.username,
-            created_at: profile.created_at || fallbackUser.created_at,
-            updated_at: profile.updated_at || fallbackUser.updated_at,
-          };
-        }
-
-        console.warn(`[Template:AuthService] Profile data is null for user ${user.id}. Using fallback data.`);
-        return fallbackUser;
-
-      } catch (profileError) {
-        const errorMessage = profileError instanceof Error ? profileError.message : 'Unknown profile error';
-        console.warn(`[Template:AuthService] Profile table access error:`, errorMessage);
-        return fallbackUser;
-      }
+      // Map session.user to AuthUser (unified for all auth methods)
+      return this.mapSessionToAuthUser(session.user);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown getCurrentUser error';
@@ -171,29 +121,22 @@ export class AuthService {
         return null;
       }
       
-      try {
-        const session = await safeSupabaseOperation(async (client) => {
-          const { data: { session } } = await client.auth.getSession();
-          return session;
-        });
-        
-        if (session?.user) {
-          const sessionUser = session.user;
-          const fallbackUser: AuthUser = {
-            id: sessionUser.id,
-            email: sessionUser.email || '',
-            username: sessionUser.email ? sessionUser.email.split('@')[0] : `user_${sessionUser.id.slice(0, 8)}`,
-            created_at: sessionUser.created_at,
-            updated_at: sessionUser.updated_at || sessionUser.created_at,
-          };
-          return fallbackUser;
-        }
-      } catch (sessionError) {
-        console.warn('[Template:AuthService] Session fallback also failed:', sessionError);
-      }
-      
       return null;
     }
+  }
+
+  // Unified session.user mapping - used by all auth flows
+  private mapSessionToAuthUser(sessionUser: any): AuthUser {
+    return {
+      id: sessionUser.id,
+      email: sessionUser.email || '',
+      username: sessionUser.user_metadata?.full_name || 
+               sessionUser.user_metadata?.name || 
+               sessionUser.email?.split('@')[0] || 
+               `user_${sessionUser.id.slice(0, 8)}`,
+      created_at: sessionUser.created_at,
+      updated_at: sessionUser.updated_at || sessionUser.created_at,
+    };
   }
 
   async sendOTP(email: string, options: SendOTPOptions = {}) {
@@ -268,7 +211,7 @@ export class AuthService {
             
             try {
               // Set flag to prevent deadlock
-              isUpdatingUser = true;
+              isUpdatingUserInOTPFlow = true;
               
               const { data: updateData, error: updateError } = await withTimeout(
                 client.auth.updateUser({ password: options.password }),
@@ -285,12 +228,12 @@ export class AuthService {
               
               // Clear flag after a delay to ensure all events are processed
               setTimeout(() => {
-                isUpdatingUser = false;
+                isUpdatingUserInOTPFlow = false;
               }, 2000);
               
             } catch (updateError) {
               // Clear flag on error
-              isUpdatingUser = false;
+              isUpdatingUserInOTPFlow = false;
               // Continue with the authentication flow
             }
           }
@@ -339,7 +282,7 @@ export class AuthService {
       console.warn('[Template:AuthService] VerifyOTPAndLogin system exception:', errorMessage);
       
       // Clear flag on any error
-      isUpdatingUser = false;
+      isUpdatingUserInOTPFlow = false;
       
       if (errorMessage.includes('timeout')) {
         return { error: 'Login timeout, please retry', user: null, errorType: 'timeout' };
@@ -503,6 +446,130 @@ export class AuthService {
     }
   }
 
+  async signInWithGoogle(): Promise<GoogleSignInResult> {
+    try {
+      // Generate cross-platform redirect URL
+      const redirectUrl = AuthSession.makeRedirectUri({
+        scheme: 'onspaceapp',
+        path: 'auth'
+      });
+
+      // Step 1: Get OAuth URL from Supabase
+      const { data, error } = await withTimeout(
+        this.supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl,
+            queryParams: { 
+              access_type: 'offline', 
+              prompt: 'consent' 
+            },
+            skipBrowserRedirect: Platform.OS !== 'web'
+          }
+        }),
+        TIMEOUT_CONFIG.AUTH_OPERATIONS,
+        'GoogleOAuth'
+      );
+
+      if (error) {
+        return { error: `OAuth init failed: ${error.message}` };
+      }
+
+      if (!data?.url) {
+        return { error: 'Failed to generate OAuth URL' };
+      }
+
+      // Web platform: Supabase handles redirect automatically
+      if (Platform.OS === 'web') {
+        return { error: null };
+      }
+
+      // Mobile platform: Manual OAuth flow
+      // Step 2: Open browser for OAuth
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        redirectUrl
+      );
+
+      // Step 3: Handle callback
+      if (result.type === 'success') {
+        const url = result.url;
+        
+        try {
+          const params = new URL(url).searchParams;
+          const code = params.get('code');
+          
+          if (!code) {
+            const error = params.get('error');
+            const errorDescription = params.get('error_description');
+            return { 
+              error: errorDescription || error || 'No authorization code received'
+            };
+          }
+
+          // Exchange code for session - this triggers SIGNED_IN event
+          const { error: exchangeError } = await withTimeout(
+            this.supabase.auth.exchangeCodeForSession(code),
+            TIMEOUT_CONFIG.AUTH_OPERATIONS,
+            'ExchangeCode'
+          );
+
+          if (exchangeError) {
+            return { 
+              error: `Session exchange failed: ${exchangeError.message}`
+            };
+          }
+
+          // CRITICAL: Don't poll and wait here!
+          // exchangeCodeForSession will trigger onAuthStateChange(SIGNED_IN)
+          // Just verify session exists and return immediately
+          const { data: sessionData } = await this.supabase.auth.getSession();
+          if (sessionData.session) {
+            // Session created successfully, AuthContext will update via onAuthStateChange
+            return { error: null };
+          }
+
+          // If no session yet, wait briefly for it to settle
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const { data: retrySessionData } = await this.supabase.auth.getSession();
+          if (retrySessionData.session) {
+            return { error: null };
+          }
+
+          // Last resort: refresh to trigger state change
+          await this.supabase.auth.refreshSession();
+          return { error: null };
+        } catch (urlError) {
+          const errorMsg = urlError instanceof Error ? urlError.message : 'Unknown error';
+          return { 
+            error: `Failed to parse callback: ${errorMsg}`
+          };
+        }
+      } else if (result.type === 'cancel') {
+        return { error: 'User cancelled login' };
+      } else if (result.type === 'dismiss') {
+        return { error: 'Browser dismissed' };
+      } else if (result.type === 'locked') {
+        return { error: 'Browser is locked' };
+      }
+
+      return { 
+        error: `Unknown result: ${result.type}`
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown Google login error';
+      
+      if (errorMessage.includes('timeout')) {
+        return { error: 'Google login timeout, please retry' };
+      }
+      
+      return { 
+        error: `Google login failed: ${errorMessage}`
+      };
+    }
+  }
+
   onAuthStateChange(callback: (user: AuthUser | null) => void) {
     try {
       const { data: { subscription } } = this.supabase.auth.onAuthStateChange(
@@ -514,7 +581,7 @@ export class AuthService {
           
           if (session?.user) {
             try {
-              const authUser = await this.getCurrentUser();
+              const authUser = this.mapSessionToAuthUser(session.user);
               callback(authUser);
             } catch (error) {
               console.warn('[Template:AuthService] Error in auth state change callback:', error);

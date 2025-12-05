@@ -2,13 +2,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthUser, SendOTPOptions, SignUpResult } from '../types';
 
-// Mock data storage keys
 const MOCK_STORAGE_KEYS = {
   USERS: '@onspace_mock_users',
   CURRENT_SESSION: '@onspace_mock_session',
 } as const;
 
-// Mock user data structure
 interface MockUser {
   id: string;
   email: string;
@@ -17,7 +15,6 @@ interface MockUser {
   updated_at: string;
 }
 
-// Mock session
 interface MockSession {
   userId: string;
   token: string;
@@ -27,19 +24,13 @@ interface MockSession {
 export class MockAuthService {
   
   async sendOTP(email: string, options: SendOTPOptions = {}) {
-    
-    // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 500));
-    
     return {};
   }
 
   async signUpWithPassword(email: string, password: string, metadata: Record<string, any> = {}) {
-    
-    // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Get or create user
     let user = await this.findUserByEmail(email);
     if (user) {
       return { 
@@ -48,21 +39,15 @@ export class MockAuthService {
       };
     }
     
-    // Create new user
     user = await this.createUser(email, metadata.username);
-    
-    // Create session
     await this.createSession(user.id);
     
     return { user };
   }
 
   async signInWithPassword(email: string, password: string) {
-    
-    // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 600));
     
-    // Get or create user (for mock convenience)
     let user = await this.findUserByEmail(email);
     if (!user) {
       return { 
@@ -72,45 +57,29 @@ export class MockAuthService {
       };
     }
     
-    // Create session
     await this.createSession(user.id);
-    
     return { user };
   }
 
-    async verifyOTPAndLogin(email: string, otp: string, options?: { password?: string; metadata?: Record<string, any> }) {
-    
-    // Simulate network delay
+  async verifyOTPAndLogin(email: string, otp: string, options?: { password?: string; metadata?: Record<string, any> }) {
     await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Get or create user
     let user = await this.findUserByEmail(email);
     if (!user) {
-      // For OTP+Password hybrid, use metadata for user creation if provided
       const username = options?.metadata?.username || email.split('@')[0];
       user = await this.createUser(email, username);
     }
     
-    // In mock mode, we don't actually store passwords or metadata, but we simulate the behavior
     if (options?.password) {
-      console.log(`[Template:MockAuth] OTP+Password registration for ${email}, password would be set in real environment`);
+      console.log(`[SDK:MockAuth] OTP+Password registration for ${email}`);
     }
     
-    if (options?.metadata) {
-      console.log(`[Template:MockAuth] User metadata for ${email}:`, options.metadata);
-    }
-    
-    // Create session
     await this.createSession(user.id);
-    
     return { user };
   }
 
   async logout() {
-    
-    // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 300));
-    
     await AsyncStorage.removeItem(MOCK_STORAGE_KEYS.CURRENT_SESSION);
     return {};
   }
@@ -121,7 +90,6 @@ export class MockAuthService {
     
     const session: MockSession = JSON.parse(sessionData);
     
-    // Check if session has expired
     if (session.expiresAt < Date.now()) {
       await AsyncStorage.removeItem(MOCK_STORAGE_KEYS.CURRENT_SESSION);
       return null;
@@ -131,19 +99,15 @@ export class MockAuthService {
   }
 
   async refreshSession() {
-    
     const sessionData = await AsyncStorage.getItem(MOCK_STORAGE_KEYS.CURRENT_SESSION);
     if (!sessionData) return;
     
     const session: MockSession = JSON.parse(sessionData);
-    
-    // Extend session time
-    session.expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    session.expiresAt = Date.now() + 24 * 60 * 60 * 1000;
     await AsyncStorage.setItem(MOCK_STORAGE_KEYS.CURRENT_SESSION, JSON.stringify(session));
   }
 
   onAuthStateChange(callback: (user: AuthUser | null) => void) {
-    
     let intervalId: NodeJS.Timeout;
     let lastUser: AuthUser | null = null;
     
@@ -157,14 +121,11 @@ export class MockAuthService {
           callback(currentUser);
         }
       } catch (error) {
-        console.warn('[Template:MockAuthService] Error in auth state check:', error);
+        console.warn('[SDK:MockAuthService] Error in auth state check:', error);
       }
     };
     
-    // Check once immediately
     checkAuthState();
-    
-    // Check auth state changes every 2 seconds
     intervalId = setInterval(checkAuthState, 2000);
     
     return {
@@ -176,7 +137,6 @@ export class MockAuthService {
     };
   }
 
-  // Helper methods
   private async getUsers(): Promise<MockUser[]> {
     const usersData = await AsyncStorage.getItem(MOCK_STORAGE_KEYS.USERS);
     return usersData ? JSON.parse(usersData) : [];
@@ -206,7 +166,6 @@ export class MockAuthService {
   private async createUser(email: string, username?: string): Promise<AuthUser> {
     const users = await this.getUsers();
     
-    // Generate special test UUID - Format: 00000000-0000-0000-0000-00000000000X
     const generateTestUUID = () => {
       const userCount = users.length;
       const incrementalId = userCount.toString().padStart(12, '0');
@@ -237,13 +196,12 @@ export class MockAuthService {
     const session: MockSession = {
       userId,
       token: `mock_token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // Expires in 24 hours
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     };
     
     await AsyncStorage.setItem(MOCK_STORAGE_KEYS.CURRENT_SESSION, JSON.stringify(session));
   }
 
-  // Development helper methods
   async clearAllMockData(): Promise<void> {
     await Promise.all([
       AsyncStorage.removeItem(MOCK_STORAGE_KEYS.USERS),

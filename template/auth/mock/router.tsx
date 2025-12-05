@@ -1,11 +1,9 @@
 // @ts-nocheck
-
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useMockAuth } from './hook';
 
-// Simplified Loading component
 const DefaultMockLoadingScreen = () => (
   <View style={styles.defaultContainer}>
     <Text style={styles.defaultText}>Mock environment loading...</Text>
@@ -15,14 +13,11 @@ const DefaultMockLoadingScreen = () => (
 
 interface MockAuthRouterProps {
   children: React.ReactNode;
-  loginRoute?: string;                    // Login page route, default '/login'
-  loadingComponent?: React.ComponentType; // Optional custom loading component
-  excludeRoutes?: string[];               // Exclude routes (pages that don't require auth)
+  loginRoute?: string;
+  loadingComponent?: React.ComponentType;
+  excludeRoutes?: string[];
 }
 
-/**
- * Mock-specific authentication router component - maintains completely consistent logic with AuthRouter
- */
 export function MockAuthRouter({
   children,
   loginRoute = '/login',
@@ -33,9 +28,7 @@ export function MockAuthRouter({
   const router = useRouter();
   const pathname = usePathname();
 
-      useEffect(() => {
-
-    // Wait for auth system to be fully initialized
+  useEffect(() => {
     if (!initialized || loading) {
       return;
     }
@@ -55,12 +48,10 @@ export function MockAuthRouter({
     }
   }, [user, loading, initialized, pathname, loginRoute, excludeRoutes, router]);
 
-  // Loading state
   if (loading || !initialized) {
     return <LoadingComponent />;
   }
 
-  // Currently on login page or excluded routes, show content directly
   const isLoginRoute = pathname === loginRoute;
   const isExcludedRoute = excludeRoutes.some(route =>
     pathname.startsWith(route)
@@ -70,7 +61,6 @@ export function MockAuthRouter({
     return <>{children}</>;
   }
 
-  // Other cases: waiting for redirect
   return <LoadingComponent />;
 }
 

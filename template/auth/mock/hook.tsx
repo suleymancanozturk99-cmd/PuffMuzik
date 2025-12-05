@@ -4,36 +4,30 @@ import { mockAuthService } from './service';
 import { useMockAuthContext } from './context';
 import { useState, useEffect } from 'react';
 
-
 export function useMockAuth(): AuthContextType {
   const context = useMockAuthContext();
   
-        const sendOTP = async (email: string): Promise<SendOTPResult> => {
+  const sendOTP = async (email: string): Promise<SendOTPResult> => {
     context.setOperationLoading(true);
     try {
       const result = await mockAuthService.sendOTP(email);
       return result;
     } catch (error) {
-      console.warn('[Template:useMockAuth] sendOTP exception:', error);
-      return { 
-        error: 'Failed to send verification code' 
-      };
+      console.warn('[SDK:useMockAuth] sendOTP exception:', error);
+      return { error: 'Failed to send verification code' };
     } finally {
       context.setOperationLoading(false);
     }
   };
 
-    const verifyOTPAndLogin = async (email: string, otp: string, options?: { password?: string }): Promise<AuthResult> => {
+  const verifyOTPAndLogin = async (email: string, otp: string, options?: { password?: string }): Promise<AuthResult> => {
     context.setOperationLoading(true);
     try {
       const result = await mockAuthService.verifyOTPAndLogin(email, otp, options);
       return result;
     } catch (error) {
-      console.warn('[Template:useMockAuth] verifyOTPAndLogin exception:', error);
-      return { 
-        error: 'Login failed',
-        user: null 
-      };
+      console.warn('[SDK:useMockAuth] verifyOTPAndLogin exception:', error);
+      return { error: 'Login failed', user: null };
     } finally {
       context.setOperationLoading(false);
     }
@@ -45,11 +39,8 @@ export function useMockAuth(): AuthContextType {
       const result = await mockAuthService.signUpWithPassword(email, password, metadata || {});
       return result;
     } catch (error) {
-      console.warn('[Template:useMockAuth] signUpWithPassword exception:', error);
-      return { 
-        error: 'Registration failed',
-        user: null 
-      };
+      console.warn('[SDK:useMockAuth] signUpWithPassword exception:', error);
+      return { error: 'Registration failed', user: null };
     } finally {
       context.setOperationLoading(false);
     }
@@ -61,11 +52,20 @@ export function useMockAuth(): AuthContextType {
       const result = await mockAuthService.signInWithPassword(email, password);
       return result;
     } catch (error) {
-      console.warn('[Template:useMockAuth] signInWithPassword exception:', error);
-      return { 
-        error: 'Login failed',
-        user: null 
-      };
+      console.warn('[SDK:useMockAuth] signInWithPassword exception:', error);
+      return { error: 'Login failed', user: null };
+    } finally {
+      context.setOperationLoading(false);
+    }
+  };
+
+  const signInWithGoogle = async (): Promise<AuthResult> => {
+    context.setOperationLoading(true);
+    try {
+      // Mock Google Sign-In - just simulate success
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('[SDK:useMockAuth] Mock Google Sign-In - not implemented in mock mode');
+      return { error: 'Google Sign-In not available in mock mode', user: null };
     } finally {
       context.setOperationLoading(false);
     }
@@ -77,14 +77,14 @@ export function useMockAuth(): AuthContextType {
       const result = await mockAuthService.logout();
       
       if (!result) {
-        console.warn('[Template:useMockAuth] Invalid logout result format:', result);
+        console.warn('[SDK:useMockAuth] Invalid logout result format:', result);
         return { error: 'Invalid logout response' };
       }
       
       return result;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown logout error';
-      console.warn('[Template:useMockAuth] Logout hook exception:', errorMessage);
+      console.warn('[SDK:useMockAuth] Logout hook exception:', errorMessage);
       return { error: errorMessage };
     } finally {
       context.setOperationLoading(false);
@@ -95,7 +95,7 @@ export function useMockAuth(): AuthContextType {
     try {
       await mockAuthService.refreshSession();
     } catch (error) {
-      console.warn('[Template:useMockAuth] Refresh session error:', error);
+      console.warn('[SDK:useMockAuth] Refresh session error:', error);
     }
   };
 
@@ -109,12 +109,12 @@ export function useMockAuth(): AuthContextType {
     verifyOTPAndLogin,
     signUpWithPassword,
     signInWithPassword,
+    signInWithGoogle,
     logout,
     refreshSession,
   };
 }
 
-// Development Helper Hook - for debugging Mock data
 export function useMockAuthDebug() {
   const [debugInfo, setDebugInfo] = useState<any>(null);
   

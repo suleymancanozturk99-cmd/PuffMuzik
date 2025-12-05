@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { AuthContextType, SendOTPResult, AuthResult, LogoutResult, SignUpResult } from '../types';
+import { AuthContextType, SendOTPResult, AuthResult, LogoutResult, SignUpResult, GoogleSignInResult } from '../types';
 import { authService } from './service';
 import { configManager } from '../../core/config';
 import { useAuthContext } from './context';
@@ -30,6 +30,9 @@ export function useAuth(): AuthContextType {
       signInWithPassword: async (): Promise<AuthResult> => ({ 
         error: 'Auth function not enabled, please check configuration', 
         user: null 
+      }),
+      signInWithGoogle: async (): Promise<GoogleSignInResult> => ({ 
+        error: 'Auth function not enabled, please check configuration'
       }),
       logout: async (): Promise<LogoutResult> => {
         console.warn('Auth function not enabled');
@@ -134,6 +137,21 @@ export function useAuth(): AuthContextType {
     }
   };
 
+  const signInWithGoogle = async (): Promise<GoogleSignInResult> => {
+    context.setOperationLoading(true);
+    try {
+      const result = await authService.signInWithGoogle();
+      return result;
+    } catch (error) {
+      console.warn('[Template:useAuth] signInWithGoogle exception:', error);
+      return { 
+        error: 'Google login failed'
+      };
+    } finally {
+      context.setOperationLoading(false);
+    }
+  };
+
   return {
     user: context.user,
     loading: context.loading,
@@ -144,6 +162,7 @@ export function useAuth(): AuthContextType {
     verifyOTPAndLogin,
     signUpWithPassword,
     signInWithPassword,
+    signInWithGoogle,
     logout,
     refreshSession,
   };

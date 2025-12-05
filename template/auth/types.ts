@@ -36,6 +36,12 @@ export interface SignUpResult extends BaseResult {
 export interface VerifyOTPOptions {
   password?: string;  // Optional password for OTP+Password hybrid registration
 }
+
+// Google OAuth result types
+export interface GoogleSignInResult {
+  error: string | null;
+}
+
 export interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
@@ -46,6 +52,7 @@ export interface AuthContextType {
   verifyOTPAndLogin: (email: string, otp: string, options?: VerifyOTPOptions) => Promise<AuthResult>;
   signUpWithPassword: (email: string, password: string, metadata?: Record<string, any>) => Promise<SignUpResult>;
   signInWithPassword: (email: string, password: string) => Promise<AuthResult>;
+  signInWithGoogle: () => Promise<GoogleSignInResult>;
   logout: () => Promise<LogoutResult>;
   refreshSession: () => Promise<void>;
 }

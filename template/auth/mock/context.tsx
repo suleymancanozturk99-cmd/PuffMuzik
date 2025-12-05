@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { AuthUser } from '../types';
 import { mockAuthService } from './service';
 
-// Context type definition - consistent with Supabase Auth
 interface MockAuthContextState {
   user: AuthUser | null;
   loading: boolean;
@@ -17,10 +16,8 @@ interface MockAuthContextActions {
 
 type MockAuthContextType = MockAuthContextState & MockAuthContextActions;
 
-// Create Context
 const MockAuthContext = createContext<MockAuthContextType | undefined>(undefined);
 
-// MockAuthProvider - clean design
 interface MockAuthProviderProps {
   children: ReactNode;
 }
@@ -33,7 +30,6 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
     initialized: false,
   });
 
-    // Unified state update function
   const updateState = (updates: Partial<MockAuthContextState>) => {
     setState(prevState => {
       const newState = { ...prevState, ...updates };
@@ -41,19 +37,16 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
     });
   };
 
-  // Set operation loading state
   const setOperationLoading = (loading: boolean) => {
     updateState({ operationLoading: loading });
   };
 
-  // Initialize Mock auth system - execute only once
   useEffect(() => {
     let isMounted = true;
     let authSubscription: any = null;
 
     const initializeMockAuth = async () => {      
       try {
-        // 1. Get current user state
         const currentUser = await mockAuthService.getCurrentUser();
         
         if (isMounted) {
@@ -64,7 +57,6 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
           });
         }
 
-        // 2. Set up auth state listener
         authSubscription = mockAuthService.onAuthStateChange((authUser) => {
           if (isMounted) {
             updateState({ user: authUser });
@@ -72,7 +64,7 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
         });
 
       } catch (error) {
-        console.warn('[Template:MockAuthProvider] Mock auth initialization failed:', error);
+        console.warn('[SDK:MockAuthProvider] Mock auth initialization failed:', error);
         if (isMounted) {
           updateState({ 
             user: null, 
@@ -85,16 +77,14 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
 
     initializeMockAuth();
 
-    // Cleanup function
     return () => {
       isMounted = false;
       if (authSubscription?.unsubscribe) {
         authSubscription.unsubscribe();
       }
     };
-  }, []); // Empty dependency array ensures single execution
+  }, []);
 
-  // Context value
   const contextValue: MockAuthContextType = {
     ...state,
     setOperationLoading,
@@ -107,7 +97,6 @@ export function MockAuthProvider({ children }: MockAuthProviderProps) {
   );
 }
 
-// useMockAuthContext Hook - internal use
 export function useMockAuthContext(): MockAuthContextType {
   const context = useContext(MockAuthContext);
   
