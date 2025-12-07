@@ -42,8 +42,7 @@
         }
       ],
       "expo-web-browser",
-      "expo-video",
-      "expo-audio",
+      "expo-av",
       [
         "expo-notifications",
         {

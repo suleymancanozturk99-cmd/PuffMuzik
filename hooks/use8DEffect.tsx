@@ -1,16 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { useAudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
 
 interface Use8DEffectOptions {
-  player: ReturnType<typeof useAudioPlayer> | null;
+  sound: Audio.Sound | null;
   isEnabled: boolean;
   speed?: number; // Rotation speed multiplier (0.5 = slow, 2 = fast), default 1
 }
 
 /**
- * Custom hook to simulate 8D Audio effect using expo-audio
+ * Custom hook to simulate 8D Audio effect using expo-av
  * 
- * ⚠️ LIMITATION: expo-audio does not support true stereo panning (stereoPan property).
+ * ⚠️ LIMITATION: expo-av does not support true stereo panning (stereoPan property).
  * This implementation uses a volume-based pseudo-panning technique:
  * - Volume oscillates to create a spatial movement illusion
  * - Creates left-right sensation through volume modulation
@@ -19,11 +19,11 @@ interface Use8DEffectOptions {
  * - Native audio modules (iOS: AVAudioEngine, Android: AudioTrack)
  * - Or Web Audio API (browser only)
  * 
- * @param player - The expo-audio player instance from useAudioPlayer()
+ * @param sound - The expo-av Sound instance
  * @param isEnabled - Toggle the 8D effect on/off
  * @param speed - Rotation speed (higher = faster rotation)
  */
-export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions) {
+export function use8DEffect({ sound, isEnabled, speed = 1 }: Use8DEffectOptions) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const angleRef = useRef(0);
 
@@ -34,11 +34,11 @@ export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions
       intervalRef.current = null;
     }
 
-    // Reset to center when disabled or no player
-    if (!player || !isEnabled) {
-      if (player) {
+    // Reset to center when disabled or no sound
+    if (!sound || !isEnabled) {
+      if (sound) {
         try {
-          player.volume = 1.0;
+          sound.setVolumeAsync(1.0);
         } catch (err) {
           console.error('Error resetting volume:', err);
         }
@@ -82,11 +82,11 @@ export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions
         const volumeModulation = 0.7 + (Math.abs(panValue) * 0.3);
         
         // Apply volume change (this creates a subtle spatial effect)
-        player.volume = volumeModulation;
+        await sound.setVolumeAsync(volumeModulation);
 
         // Note: For true stereo panning, you would do:
-        // player.pan = panValue; (if it existed)
-        // But expo-audio doesn't support stereo panning
+        // sound.setPanAsync(panValue); (if it existed)
+        // But expo-av doesn't support stereo panning
         
       } catch (error) {
         console.error('8D Effect error:', error);
@@ -100,11 +100,11 @@ export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions
         intervalRef.current = null;
       }
     };
-  }, [player, isEnabled, speed]);
+  }, [sound, isEnabled, speed]);
 
   // Return current state for debugging/UI
   return {
-    isActive: isEnabled && player !== null,
+    isActive: isEnabled && sound !== null,
     currentAngle: angleRef.current,
   };
 }
@@ -113,24 +113,37 @@ export function use8DEffect({ player, isEnabled, speed = 1 }: Use8DEffectOptions
  * USAGE EXAMPLE:
  * 
  * ```tsx
- * import { useAudioPlayer } from 'expo-audio';
+ * import { Audio } from 'expo-av';
  * import { use8DEffect } from '@/hooks/use8DEffect';
  * 
  * function MusicPlayer() {
- *   const player = useAudioPlayer(require('./song.mp3'));
+ *   const [sound, setSound] = useState<Audio.Sound | null>(null);
  *   const [is8DEnabled, setIs8DEnabled] = useState(false);
  *   const [rotationSpeed, setRotationSpeed] = useState(1);
  * 
+ *   useEffect(() => {
+ *     async function loadSound() {
+ *       const { sound } = await Audio.Sound.createAsync(
+ *         require('./song.mp3')
+ *       );
+ *       setSound(sound);
+ *     }
+ *     loadSound();
+ *     return () => {
+ *       sound?.unloadAsync();
+ *     };
+ *   }, []);
+ * 
  *   // Apply 8D effect
  *   const { isActive } = use8DEffect({
- *     player,
+ *     sound,
  *     isEnabled: is8DEnabled,
  *     speed: rotationSpeed,
  *   });
  * 
  *   return (
  *     <View>
- *       <Button title="Play" onPress={() => player.play()} />
+ *       <Button title="Play" onPress={() => sound?.playAsync()} />
  *       <Switch value={is8DEnabled} onValueChange={setIs8DEnabled} />
  *       <Slider 
  *         value={rotationSpeed} 

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, FlatList, ScrollView, Modal, Animated } from 'react-native';
 import { Image } from 'expo-image';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,13 +18,7 @@ const COVER_SIZE = SCREEN_WIDTH * 0.75;
 
 export default function PlayerScreen() {
   const router = useRouter();
-  const videoPlayer = currentSong?.hasVideo && currentSong?.videoPath 
-    ? useVideoPlayer(currentSong.videoPath, player => {
-        player.loop = repeat === 'one';
-        if (isPlaying) player.play();
-        else player.pause();
-      })
-    : null;
+  const videoRef = useRef<Video>(null);
   const {
     playerState,
     playlists,
@@ -80,7 +74,21 @@ export default function PlayerScreen() {
       extractDominantColor(currentSong.coverUrl);
       getFileSize(currentSong);
     }
+
+    if (videoRef.current) {
+      playerService.setVideoRef(videoRef.current);
+    }
   }, [currentSong?.id]);
+
+  useEffect(() => {
+    if (videoRef.current && isVideoMode && currentSong?.videoPath) {
+      if (isPlaying) {
+        videoRef.current.playAsync();
+      } else {
+        videoRef.current.pauseAsync();
+      }
+    }
+  }, [isPlaying, isVideoMode]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -230,12 +238,16 @@ export default function PlayerScreen() {
               <Ionicons name="chevron-down" size={32} color={theme.colors.text} />
             </TouchableOpacity>
             <View style={styles.coverContainer}>
-              {isVideoMode && currentSong.hasVideo && currentSong.videoPath && videoPlayer ? (
+              {isVideoMode && currentSong.hasVideo && currentSong.videoPath ? (
                 <View style={styles.videoContainer}>
-                  <VideoView
-                    player={videoPlayer}
+                  <Video
+                    ref={videoRef}
+                    source={{ uri: currentSong.videoPath }}
                     style={styles.video}
-                    nativeControls={false}
+                    shouldPlay={isPlaying}
+                    isLooping={repeat === 'one'}
+                    resizeMode={ResizeMode.CONTAIN}
+                    useNativeControls={false}
                   />
                 </View>
               ) : (

@@ -1,15 +1,8 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react';
+import { AVPlaybackStatus } from 'expo-av';
 import { Song, Playlist, PlayerState } from '../types/music';
 import { storageService } from '../services/storageService';
 import { playerService } from '../services/playerService';
-// Playback status interface
-interface PlaybackStatus {
-  isLoaded: boolean;
-  isPlaying: boolean;
-  positionMillis: number;
-  durationMillis: number;
-  didJustFinish?: boolean;
-}
 
 interface MusicContextType {
   songs: Song[];
@@ -69,8 +62,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    playerService.setOnPlaybackStatusUpdate((status: any) => {
-      if (status && status.isLoaded) {
+    playerService.setOnPlaybackStatusUpdate((status: AVPlaybackStatus) => {
+      if (status.isLoaded) {
         setPlayerState(prev => ({
           ...prev,
           position: status.positionMillis,
